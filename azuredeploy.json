@@ -1,0 +1,302 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "olegsstorageaccountType": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_ZRS",
+        "Standard_GRS",
+        "Standard_RAGRS",
+        "Premium_LRS"
+      ]
+    },
+    "web01Name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "web01AdminUserName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "web01AdminPassword": {
+      "type": "securestring"
+    },
+    "web01WindowsOSVersion": {
+      "type": "string",
+      "defaultValue": "2016-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-Datacenter",
+        "2012-R2-Datacenter",
+        "2016-Datacenter"
+      ]
+    },
+    "PublicNSGName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extensionsVMAccess_name": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "variables": {
+    "olegsstorageaccountName": "olegsstorageaccount",
+    "vNet01Prefix": "10.0.0.0/16",
+    "vNet01Subnet1Name": "Public",
+    "vNet01Subnet1Prefix": "10.0.0.0/24",
+    "vNet01Subnet2Name": "Private",
+    "vNet01Subnet2Prefix": "10.0.1.0/24",
+    "web01ImagePublisher": "MicrosoftWindowsServer",
+    "web01ImageOffer": "WindowsServer",
+    "web01OSDiskName": "web01OSDisk",
+    "web01VmSize": "Standard_A2_v2",
+    "web01VnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'vNet01')]",
+    "web01SubnetRef": "[concat(variables('web01VnetID'), '/subnets/', variables('vNet01Subnet1Name'))]",
+    "web01StorageAccountContainerName": "vhds",
+    "web01NicName": "[concat(parameters('web01Name'), 'NetworkInterface')]",
+    "publicIP01Name": "publicIP01"
+  },
+  "resources": [
+    {
+      "name": "[variables('olegsstorageaccountName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-01-01",
+      "sku": {
+        "name": "[parameters('olegsstorageaccountType')]",
+        "tier": "standard"
+      },
+      "dependsOn": [],
+      "tags": {
+        "displayName": "olegsstorageaccount"
+      },
+      "kind": "Storage",
+      "properties": {
+        "encryption": {
+          "keySource": "Microsoft.Storage",
+          "services": {
+            "blob": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "vNet01",
+      "type": "Microsoft.Network/virtualNetworks",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "vNet01"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('vNet01Prefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('vNet01Subnet1Name')]",
+            "properties": {
+              "addressPrefix": "[variables('vNet01Subnet1Prefix')]",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', parameters('PublicNSGName'))]"
+              }
+            }
+          },
+          {
+            "name": "[variables('vNet01Subnet2Name')]",
+            "properties": {
+              "addressPrefix": "[variables('vNet01Subnet2Prefix')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[variables('web01NicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', 'vNet01')]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIP01Name'))]"
+      ],
+      "tags": {
+        "displayName": "web01Nic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('web01SubnetRef')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIP01Name'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('web01Name')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2015-06-15",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('olegsstorageaccountName'))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', variables('web01NicName'))]"
+      ],
+      "tags": {
+        "displayName": "web01"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('web01VmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('web01Name')]",
+          "adminUsername": "[parameters('web01AdminUsername')]",
+          "adminPassword": "[parameters('web01AdminPassword')]",
+          "windowsConfiguration": {
+            "provisionVMAgent": true,
+            "enableAutomaticUpdates": true
+          }
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('web01ImagePublisher')]",
+            "offer": "[variables('web01ImageOffer')]",
+            "sku": "[parameters('web01WindowsOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "web01OSDisk",
+            "vhd": {
+              "uri": "[concat(reference(resourceId('Microsoft.Storage/storageAccounts', variables('olegsstorageaccountName')), '2016-01-01').primaryEndpoints.blob, variables('web01StorageAccountContainerName'), '/', variables('web01OSDiskName'), '.vhd')]"
+            },
+            "caching": "ReadWrite",
+            "createOption": "FromImage"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('web01NicName'))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[concat('https', '://', variables('olegsstorageaccountname'), '.blob.core.windows.net', '/')]"
+          }
+        }
+      }
+    },
+    {
+      "name": "[variables('publicIP01Name')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "publicIP01"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic"
+
+      }
+    },
+    {
+      "name": "[parameters('publicNSGName')]",
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "tags": {
+        "displayName": "PublicNSG"
+      },
+      "properties": {
+        "securityRules": [
+          {
+            "name": "rdp-allow",
+            "properties": {
+              "description": "Allow RDP",
+              "protocol": "Tcp",
+              "sourcePortRange": "*",
+              "destinationPortRange": "3389",
+              "sourceAddressPrefix": "Internet",
+              "destinationAddressPrefix": "*",
+              "access": "Allow",
+              "priority": 200,
+              "direction": "Inbound"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "<parentVmResource>/VMAccessAgent",
+      "apiVersion": "2016-04-30-preview",
+      "location": "westus",
+      "scale": null,
+      "tags": {
+        "displayName": "VMAccessExtension"
+      },
+      "properties": {
+        "publisher": "Microsoft.Compute",
+        "type": "VMAccessAgent",
+        "typeHandlerVersion": "2.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "UserName": "[parameters('web01AdminUserName')]"
+        },
+        "protectedSettings": {}
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Compute/virtualMachines', parameters('web01Name'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Compute/virtualMachines/extensions",
+      "name": "<parentVmResource>/OMSExtension",
+      "apiVersion": "2015-06-15",
+      "location": "[resourceGroup().location]",
+      "dependsOn": [
+        "[concat('Microsoft.Compute/virtualMachines/', parameters('web01Name'))]"
+      ],
+      "properties": {
+        "publisher": "Microsoft.EnterpriseCloud.Monitoring",
+        "type": "MicrosoftMonitoringAgent",
+        "typeHandlerVersion": "1.0",
+        "autoUpgradeMinorVersion": true,
+        "settings": {
+          "workspaceId": "65f3970e-b3b8-46aa-8473-1244ac65bf2f"
+        },
+        "protectedSettings": {
+          "workspaceKey": "FSGsS6Ezy1cKgRkAZLTjLKFoxxcTSvt9Ven55ePUl06GGuiq3+Cz23Gut/geReBW4aVC/Xs8c0v4Z4u98lc6fA=="
+        }
+      }
+    }
+  ],
+
+  "outputs": {
+    "ipaddress": {
+      "value": "[reference(variables('publicIP01Name'))]",
+      "type": "string"
+    }
+  }
+}
+   
