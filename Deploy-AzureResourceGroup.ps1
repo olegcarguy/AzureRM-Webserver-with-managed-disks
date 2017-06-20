@@ -6,7 +6,7 @@ Param(
     [string] [Parameter(Mandatory=$true)] $ResourceGroupLocation,
     [string] $ResourceGroupName = 'OlegsRG01',
     [switch] $UploadArtifacts,
-    [string] $StorageAccountName,
+    [string] $StorageAccountName = 'olegsstorageaccount',
     [string] $StorageContainerName = $ResourceGroupName.ToLowerInvariant() + '-stageartifacts',
     [string] $TemplateFile = 'azuredeploy.json',
     [string] $TemplateParametersFile = 'azuredeploy.parameters.json',
